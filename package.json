@@ -1,0 +1,5 @@
+{
+  "private": true,
+  "type": "module",
+  "//": "No dependencies and no build step. This file exists ONLY so `node test.mjs` can load the same ES modules the browser loads. GitHub Pages ignores it."
+}

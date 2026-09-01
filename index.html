@@ -1,0 +1,425 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Humanizer — translate any language pair, then lower the AI-detector score</title>
+<meta name="description" content="A static browser tool: translate between 23 languages, then drive a calibrated AI-likeness score down behind structural guards that stop the model inventing facts.">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<main>
+
+<header>
+  <h1>Humanizer</h1>
+  <p>
+    Translate between any pair of 23 languages, then rewrite the output until it stops reading as
+    machine-produced. The rewrite loop optimises a calibrated score — behind structural guards that
+    reject any pass which invents a figure, drops a fact, or games the metric instead of fixing the text.
+  </p>
+</header>
+
+<nav class="tabs" role="tablist">
+  <button role="tab" id="tab-rewrite" aria-selected="true" data-tab="rewrite">Rewrite</button>
+  <button role="tab" id="tab-score"   aria-selected="false" data-tab="score">Score only</button>
+  <button role="tab" id="tab-verify"  aria-selected="false" data-tab="verify">Verify against a real detector</button>
+  <button role="tab" id="tab-about"   aria-selected="false" data-tab="about">What this does and does not do</button>
+  <button class="ghost" id="open-settings" style="margin-left:auto">Settings &amp; keys</button>
+</nav>
+
+<!-- ───────────────────────────── REWRITE ───────────────────────────── -->
+<section id="pane-rewrite">
+  <div class="panel">
+    <div class="row">
+      <div class="field">
+        <label for="from">From</label>
+        <select id="from"></select>
+      </div>
+      <div class="field">
+        <label for="to">To</label>
+        <select id="to"></select>
+      </div>
+      <div class="field">
+        <label for="provider">Model</label>
+        <select id="provider"></select>
+      </div>
+      <div class="field" style="flex:0 0 8rem">
+        <label for="target">Target score</label>
+        <input type="number" id="target" min="0" max="90" step="5" value="30">
+      </div>
+      <div class="field" style="flex:0 0 7rem">
+        <label for="maxcalls">Max passes</label>
+        <select id="maxcalls">
+          <option>1</option><option>3</option><option selected>5</option><option>8</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="field">
+        <label for="glossary">Never change these terms (comma separated)</label>
+        <input id="glossary" placeholder="HiiMS, Cortisol, Contact Us">
+      </div>
+      <div class="field" style="flex:0 0 auto">
+        <label for="aggressive">Aggressive Hindi rules</label>
+        <select id="aggressive">
+          <option value="off" selected>Off (safer)</option>
+          <option value="on">On</option>
+        </select>
+      </div>
+    </div>
+    <p class="tiny" id="pair-note"></p>
+
+    <div class="row">
+      <div class="field" style="flex:3 1 20rem">
+        <label for="url">Import a blog post from its URL</label>
+        <input id="url" type="url" placeholder="https://hiims.in/blog/some-post">
+      </div>
+      <div class="field" style="flex:0 0 auto">
+        <button class="ghost" id="fetch" style="margin-top:1.1rem">Load article</button>
+      </div>
+    </div>
+    <p class="tiny" id="fetch-status"></p>
+
+    <div class="field">
+      <label for="input">Text</label>
+      <textarea id="input" placeholder="Paste the text here, or load it from a URL above. Below roughly 120 words the signals are densities over too few words to mean much, and the tool will say so instead of printing a confident number."></textarea>
+    </div>
+
+    <div class="row" style="margin-top:.8rem">
+      <button class="go" id="run">Translate &amp; humanize</button>
+      <button class="ghost" id="run-rules">Deterministic pass only (no key, offline)</button>
+      <button class="ghost hidden" id="cancel">Stop</button>
+      <span class="tiny" id="run-status"></span>
+    </div>
+  </div>
+
+  <div class="panel hidden" id="result">
+    <h2>Result</h2>
+    <div class="scores" id="result-scores"></div>
+    <p class="note" id="result-note"></p>
+    <div id="result-warn"></div>
+
+    <div class="field">
+      <label for="output">Output <span class="tiny" id="output-meta"></span></label>
+      <textarea id="output" class="out"></textarea>
+    </div>
+    <div class="row">
+      <button class="ghost" id="copy-out">Copy output</button>
+      <button class="ghost" id="copy-in">Copy the original</button>
+      <button class="ghost" id="send-verify">Record a real detector's before/after</button>
+    </div>
+
+    <h3>Every pass, accepted or not</h3>
+    <div id="passes"></div>
+
+    <h3>Signals</h3>
+    <table id="params"><thead><tr>
+      <th>Signal</th><th class="num">Before</th><th class="num">After</th><th class="num">Weight</th><th>Status</th>
+    </tr></thead><tbody></tbody></table>
+    <p class="tiny">
+      A greyed row is measured and reported but deliberately <em>not</em> optimised — see
+      “What this does and does not do”.
+    </p>
+
+    <h3 id="obs-head" class="hidden">Unscored observations</h3>
+    <div id="observations"></div>
+
+    <details id="refusals-wrap">
+      <summary>What the offline pass refused to do, and why</summary>
+      <div id="refusals"></div>
+    </details>
+  </div>
+</section>
+
+<!-- ───────────────────────────── SCORE ───────────────────────────── -->
+<section id="pane-score" class="hidden">
+  <div class="panel">
+    <div class="row">
+      <div class="field">
+        <label for="score-lang">Language</label>
+        <select id="score-lang"></select>
+      </div>
+      <div class="field" style="flex:0 0 auto">
+        <button class="go" id="run-score" style="margin-top:1.1rem">Score it</button>
+      </div>
+    </div>
+    <div class="row">
+      <div class="field" style="flex:3 1 20rem">
+        <label for="score-url">Import from a URL</label>
+        <input id="score-url" type="url" placeholder="https://example.com/post">
+      </div>
+      <div class="field" style="flex:0 0 auto">
+        <button class="ghost" id="score-fetch" style="margin-top:1.1rem">Load article</button>
+      </div>
+    </div>
+    <p class="tiny" id="score-fetch-status"></p>
+
+    <div class="field">
+      <label for="score-input">Text</label>
+      <textarea id="score-input" placeholder="Paste text to measure without rewriting anything, or load it from a URL above."></textarea>
+    </div>
+  </div>
+  <div class="panel hidden" id="score-result">
+    <div class="scores" id="score-scores"></div>
+    <p class="note" id="score-verdict"></p>
+    <p class="tiny" id="score-method"></p>
+    <table id="score-params"><thead><tr>
+      <th>Signal</th><th class="num">Measured</th><th class="num">Score</th><th class="num">Weight</th><th>Status</th>
+    </tr></thead><tbody></tbody></table>
+    <h3>Literal defects found</h3>
+    <div id="score-flags"></div>
+  </div>
+</section>
+
+<!-- ───────────────────────────── VERIFY ───────────────────────────── -->
+<section id="pane-verify" class="hidden">
+  <div class="panel">
+    <h2>Why this tab exists</h2>
+    <p class="note">
+      This tool's claim is that it lowers an AI-detector score. That is only checkable if a detector
+      is in the loop — so here are the two honest ways to check it, and the reason neither is automatic.
+    </p>
+    <div class="warnbox">
+      No commercial detector (GPTZero, Originality, Turnitin, Winston, QuillBot) is validated on any
+      Indian language, and none offers a usable free API. Several also refuse browser calls outright.
+      So the loop is driven by the local calibrated scorer, and verification against a real detector is
+      recorded here — <strong>as a pair</strong>. A lone “after” number is evidence of nothing.
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Record a before / after by hand</h2>
+    <p class="note">
+      Copy each text into the detector of your choice, then type both numbers in. The delta is the
+      only reading that means anything, so a row stays incomplete until both halves exist.
+    </p>
+    <div class="row">
+      <div class="field">
+        <label for="v-detector">Detector</label>
+        <input id="v-detector" list="known-detectors" placeholder="GPTZero">
+        <datalist id="known-detectors"></datalist>
+      </div>
+      <div class="field" style="flex:0 0 8rem">
+        <label for="v-side">Side</label>
+        <select id="v-side"><option value="before">Before</option><option value="after">After</option></select>
+      </div>
+      <div class="field" style="flex:0 0 8rem">
+        <label for="v-score">AI %</label>
+        <input type="number" id="v-score" min="0" max="100" step="0.1">
+      </div>
+      <div class="field" style="flex:0 0 auto">
+        <button class="go" id="v-add" style="margin-top:1.1rem">Record</button>
+      </div>
+    </div>
+    <p class="tiny" id="v-run-note"></p>
+    <table id="v-log"><thead><tr>
+      <th>Run</th><th>Detector</th><th>Lang</th><th class="num">Before</th><th class="num">After</th><th class="num">Delta</th>
+    </tr></thead><tbody></tbody></table>
+    <div class="row" style="margin-top:.8rem">
+      <button class="ghost" id="v-csv">Download CSV</button>
+      <button class="ghost" id="v-clear">Clear the log</button>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Or wire a detector's API directly</h2>
+    <p class="note">
+      A generic adapter. It runs at most twice per rewrite — once on the input, once on the final
+      output — and <strong>never inside the loop</strong>: five passes would be ten paid calls, and a
+      vendor's number should not be steering edits in a language it was never validated on. Left
+      unconfigured it refuses to run rather than guess where the score lives in an unknown response.
+    </p>
+    <div class="row">
+      <div class="field"><label for="d-name">Name</label><input id="d-name" placeholder="Sapling"></div>
+      <div class="field" style="flex:2 1 18rem"><label for="d-url">POST URL</label><input id="d-url" placeholder="https://api.sapling.ai/api/v1/aidetect"></div>
+    </div>
+    <div class="row">
+      <div class="field"><label for="d-field">Request field</label><input id="d-field" value="document"></div>
+      <div class="field"><label for="d-keyheader">Key header</label><input id="d-keyheader" value="Authorization"></div>
+      <div class="field"><label for="d-key">Key</label><input id="d-key" type="password" placeholder="left in this browser only"></div>
+    </div>
+    <div class="row">
+      <div class="field" style="flex:2 1 18rem"><label for="d-path">Response path (dotted)</label><input id="d-path" placeholder="documents.0.class_probabilities.ai"></div>
+      <div class="field" style="flex:0 0 10rem">
+        <label for="d-scale">Scale</label>
+        <select id="d-scale"><option value="fraction">0–1 fraction</option><option value="percent">0–100 percent</option></select>
+      </div>
+      <div class="field" style="flex:0 0 auto">
+        <button class="ghost" id="d-save" style="margin-top:1.1rem">Save</button>
+        <span class="tiny" id="d-status"></span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ───────────────────────────── ABOUT ───────────────────────────── -->
+<section id="pane-about" class="hidden">
+  <div class="panel">
+    <h2>The honest version</h2>
+    <div class="warnbox hard">
+      Lowering this score does not guarantee GPTZero, Turnitin or Originality will call your text
+      human. They are closed, they disagree with each other, and none is validated on any Indian
+      language. What this measurably does is remove the specific artefacts — measured against real
+      text — that make copy read as machine-produced.
+    </div>
+    <p class="note">
+      The score comes from signals calibrated on real Hindi: native BBC Hindi, human-translated
+      Wikipedia, and raw machine translation, separating at AUC 1.00 / Cohen's d 3.2. English has its
+      own separately measured bands. <strong>Those are the only two calibrated languages.</strong> For
+      the other 21 the word lists are genuinely per-language and the literal matches stay reliable, but
+      the numeric bands are Hindi's extrapolated — so for those the loop optimises <em>defect count</em>,
+      not the number, and no verdict label is shown.
+    </p>
+  </div>
+
+  <div class="panel">
+    <h2>What the loop is allowed to chase</h2>
+    <p class="note">
+      Chasing a score invites edits that move the number without improving the text. Two signals are
+      therefore measured and reported but never optimised:
+    </p>
+    <table><thead><tr><th>Signal</th><th>Why it is not chased</th></tr></thead><tbody>
+      <tr><td><b>Passive voice</b> (English, weight .15)</td>
+        <td>Its bands were measured on long articles; short text scores 0 regardless of who wrote it,
+            and the band was never retuned. Chasing it means inserting passives to harvest points from
+            a measurement that does not apply.</td></tr>
+      <tr><td><b>Colon-led lists</b> (English, weight .25)</td>
+        <td>The detector matches a literal colon. Swapping “:” for an em dash kills the match without
+            changing a single word — a pure exploit. A model may rewrite the list into prose; the
+            offline pass may not.</td></tr>
+    </tbody></table>
+    <p class="note">
+      The English objective is renormalised over the remaining three signals (.353 / .353 / .294). The
+      four Indic signals keep the equal .25 weights they were calibrated with.
+    </p>
+  </div>
+
+  <div class="panel">
+    <h2>How a pass is judged</h2>
+    <p class="note">
+      <strong>The score chooses the direction and picks the winner. It is never allowed to grant
+      admission.</strong> Every candidate clears these in order, and evaluation stops at the first
+      failure — so a good score can never rescue a candidate that failed a gate.
+    </p>
+    <table><thead><tr><th class="num">#</th><th>Gate</th><th>Rejects</th></tr></thead><tbody>
+      <tr><td class="num">1</td><td>Placeholders &amp; figures</td><td>A dropped protected value, or a figure the model invented. Every number, price, dosage, URL, email and phone is replaced by an opaque token <em>before the model sees the text</em>, so an invented figure is a string comparison rather than a judgement call.</td></tr>
+      <tr><td class="num">2</td><td>Protected spans</td><td>A URL, dosage or price that changed, checked against the original.</td></tr>
+      <tr><td class="num">3</td><td>Meaning</td><td>A hedge that was dropped — “may reduce” quietly becoming “reduces”.</td></tr>
+      <tr><td class="num">4</td><td>Length</td><td>Drift beyond 75–125% of the original <em>and</em> ±15% per pass. Both, because three chained 12% cuts pass a per-pass check and still lose a third of the text.</td></tr>
+      <tr><td class="num">5</td><td>Locked terms</td><td>Any term you listed that vanished.</td></tr>
+      <tr><td class="num">6</td><td>Script</td><td>Indic text drifting back toward English.</td></tr>
+      <tr><td class="num">7</td><td>Metric gaming</td><td>Commas deleted without sentences being split; stub paragraphs inserted to spike variance.</td></tr>
+      <tr><td class="num">8</td><td>Defect trading</td><td>A pass that fixes two defects by creating a third.</td></tr>
+      <tr><td class="num">9</td><td>Score</td><td>Only now: no meaningful gain, no acceptance.</td></tr>
+    </tbody></table>
+    <p class="note">
+      A rejection does not end the run — it discards that candidate and retries. The output is the
+      best-scoring accepted pass, and the free offline pass is always on that leaderboard, so a run
+      where every model attempt is rejected still returns a real improvement rather than your raw input.
+    </p>
+  </div>
+
+  <div class="panel">
+    <h2>A measured failure of the English score, kept here on purpose</h2>
+    <p class="note">
+      A real 1,392-word document scored <strong>8.8% — “reads as human-written”</strong> here, while
+      QuillBot called it <strong>96% AI-generated</strong> and GPTZero <strong>74%</strong>. The tool
+      was wrong, not the detectors.
+    </p>
+    <p class="note">
+      The cause is structural, not a fluke. <code>tell_1k</code> and <code>colon_lists_1k</code> are
+      <strong>55% of the English weight between them and are keyword lookups</strong> — against
+      “moreover”, “delve into”, “tapestry”. Current model prose does not use that 2023 vocabulary, so
+      both returned a perfect 100 <em>for the absence of it</em>, which is not evidence a person wrote
+      anything. Only <code>passive_ratio</code> fired, and that is the one signal deliberately kept out
+      of the objective — so the loop had nothing to act on and ran zero passes.
+    </p>
+    <p class="note">
+      Measured across every labelled English fixture available, the current composite
+      <strong>ranks the human sample as more AI-like than the AI mean</strong> (39.8 vs 33.3). Signals
+      that do separate: nominalisation density (AI 55.6/1k vs human 12.0), contractions (zero in all
+      five AI fixtures, 4.8 in the human one), and first/second person (10.0 vs 64.7).
+    </p>
+    <div class="warnbox">
+      Those signals ship as <strong>observations, not scores</strong> — displayed, and fed to the
+      rewriter, but carrying zero weight. There is only <strong>one</strong> human fixture available,
+      and one sample cannot set a band; inventing calibrated-looking numbers is the exact mistake that
+      produced an AUC of 0.21 the first time this detector was built. To promote them, eight or more
+      genuinely human-written English documents are needed.
+    </div>
+    <p class="note">
+      Meanwhile the English verdict no longer claims “human-written” when the score came mostly from
+      absent keywords, and <strong>for English you should check a real detector</strong> — unlike the
+      Indic languages, English is well served by GPTZero and QuillBot, so there is no excuse for
+      relying on the proxy.
+    </p>
+  </div>
+
+  <div class="panel">
+    <h2>Importing a blog from a URL</h2>
+    <p class="note">
+      A browser cannot fetch an arbitrary website directly — almost no site sends an
+      <code>Access-Control-Allow-Origin</code> header, so the request is blocked before it starts.
+      Getting round that needs a proxy, and <strong>a proxy sees the URL you asked for</strong>.
+    </p>
+    <p class="note">
+      So the order is deliberate: a <strong>direct</strong> read is tried first every time, and when
+      it works no third party is involved at all. Only if the site blocks it does the tool fall back
+      to <code>r.jina.ai</code>, then <code>allorigins.win</code>. Which route succeeded is printed
+      next to the result, every time. It never silently proxies.
+    </p>
+    <div class="warnbox">
+      Two consequences worth knowing. <strong>Expect red console errors on a blocked direct read</strong>
+      — the browser emits “blocked by CORS policy” itself, before any script sees it, and no page can
+      suppress that. Seeing it means the fallback is working. And <strong>fetched page content is
+      data, not instructions</strong>: it lands in the textarea for you to look at, and if you then
+      run a rewrite it is sent to your chosen model as text to edit. Read what you loaded before
+      spending a call on it.
+    </div>
+    <p class="tiny">
+      Sites behind Cloudflare, a login or a paywall generally cannot be read this way. Paste the text
+      instead.
+    </p>
+  </div>
+
+  <div class="panel">
+    <h2>Keys, cost and privacy</h2>
+    <p class="note">
+      There is no backend. Your text goes from this page straight to whichever provider you picked,
+      using your own key, which is stored in this browser's localStorage and nowhere else. No key ships
+      with the tool and none is ever defaulted. The offline pass and all scoring need no key and make
+      no network call at all.
+    </p>
+    <p class="tiny">
+      Run the regression suite with <code>node test.mjs</code>, or open <a href="test.html">test.html</a>.
+      Both run the same assertions offline against scripted model output, at zero cost.
+    </p>
+  </div>
+</section>
+
+<footer>
+  Static page, no backend, no build step. The detector's calibrated constants come from the
+  measurement record in <code>bhasha-seo/CALIBRATION.md</code> and are pinned by a regression test, so a
+  band cannot be quietly tuned to make a demo look better.
+</footer>
+
+<!-- ───────────────────────────── SETTINGS ───────────────────────────── -->
+<dialog id="settings">
+  <h2>Providers and keys</h2>
+  <p class="note">
+    Keys are held in this browser only. Unconfigured providers stay listed and disabled rather than
+    hidden — a hidden provider looks like one that does not exist. Model names are editable defaults,
+    not pins: provider model ids churn, and a stale default should be a thirty-second fix.
+  </p>
+  <div id="prov-list"></div>
+  <div class="row" style="margin-top:1rem">
+    <button class="go" id="settings-close">Done</button>
+    <button class="ghost" id="forget-all">Forget every key</button>
+  </div>
+</dialog>
+
+</main>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Humanizer — regression suite</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<main>
+<header>
+  <h1>Regression suite</h1>
+  <p>
+    The same assertions <code>node test.mjs</code> runs, in the browser the tool actually ships to.
+    Every case is offline and deterministic — scripted model output, no key, no network, no cost. A
+    failure here is never flaky.
+  </p>
+</header>
+
+<div class="panel">
+  <div class="scores" id="summary"><div class="score"><b id="count">…</b><span>running</span></div></div>
+  <p class="note">
+    This suite exists because the loop chases a number. A defect-driven loop's worst failure is
+    “no improvement”; a score-driven loop's worst failure is fluent text asserting a statistic nobody
+    made. <strong>If you arm the score trigger, you ship its regression test.</strong>
+  </p>
+  <p class="tiny"><a href="index.html">← back to the tool</a></p>
+</div>
+
+<div id="results"></div>
+</main>
+
+<script type="module">
+import { runTests } from "./js/tests.js";
+
+const results = document.getElementById("results");
+const { results: rows, passed, failed } = await runTests();
+
+document.getElementById("count").textContent = passed + " / " + (passed + failed);
+document.getElementById("summary").firstElementChild.className = "score " + (failed ? "ai" : "human");
+document.getElementById("summary").firstElementChild.lastElementChild.textContent =
+  failed ? failed + " failing" : "all passing";
+
+for (const r of rows) {
+  const box = document.createElement("div");
+  box.className = "pass " + (r.ok ? "ok" : "no");
+  const b = document.createElement("b");
+  b.textContent = (r.ok ? "PASS · " : "FAIL · ") + r.name;
+  box.appendChild(b);
+  const why = document.createElement("p");
+  why.textContent = r.why;
+  box.appendChild(why);
+  const detail = document.createElement("p");
+  detail.textContent = "→ " + r.detail;
+  detail.style.color = r.ok ? "var(--good)" : "var(--bad)";
+  box.appendChild(detail);
+  results.appendChild(box);
+}
+</script>
+</body>
+</html>
