@@ -18,7 +18,7 @@ import { applyRules } from "./rules.js";
 import { runHumanize, runTranslate, objectiveWeights, evaluate } from "./loop.js";
 import * as EN from "./detect-en.js";
 import * as INDIC from "./detect-indic.js";
-import { REGISTRY, BY_ID, status, extractText, looksLikeJsonEnvelope } from "./providers.js";
+import { REGISTRY, BY_ID, status, extractText, looksLikeJsonEnvelope, decodeKeyPayload } from "./providers.js";
 import { extractExtra, extraFlags } from "./en-signals.js";
 import { scoreLocal } from "./detectors.js";
 import { normaliseUrl, FetchError } from "./fetch-url.js";
@@ -455,6 +455,39 @@ test(
     assert(ev.defectCount >= 3, "the observations did not reach the loop's defect set: " + ev.defectCount);
     return flags.length + " observations raised, verdict withheld, zero weight, " +
       ev.defectCount + " defects visible to the loop";
+  },
+);
+
+test(
+  "14. The setup-link decoder is strict, and non-Latin keys survive it",
+  "The fragment carries real credentials. It must decode exactly or not at all — a link that " +
+  "half-applies leaves you worse off than one that does nothing, and the fragment is the only part " +
+  "of a URL browsers never send to the server, which is the whole reason it is the carrier.",
+  () => {
+    const payload = { gemini: "AQ.Ab8-xyz_09", openrouter: "sk-or-v1-aaa", _models: { gemini: "gemini-3.6-flash" } };
+    const b64 = Buffer.from(JSON.stringify(payload), "utf8").toString("base64")
+      .replace(/\+/g, "-").replace(/\//g, "_");
+
+    const got = decodeKeyPayload("#keys=" + b64);
+    assert(got, "a valid payload did not decode");
+    assert(got.gemini === payload.gemini && got.openrouter === payload.openrouter,
+      "keys were mangled: " + JSON.stringify(got));
+    assert(got._models.gemini === "gemini-3.6-flash", "model pins were lost");
+
+    // base64url must round-trip the - and _ substitutions.
+    assert(decodeKeyPayload("#keys=" + b64.replace(/=/g, "")), "padding-stripped base64url failed");
+
+    // Anything malformed returns null rather than a partial object.
+    for (const bad of ["", "#", "#nothing=1", "#keys=", "#keys=!!!!", "#keys=" +
+      Buffer.from("[1,2,3]").toString("base64"), "#keys=" + Buffer.from("not json").toString("base64")]) {
+      assert(decodeKeyPayload(bad) === null, "malformed input was accepted: " + JSON.stringify(bad));
+    }
+
+    // Unicode must survive, or a key with a non-ASCII byte silently corrupts.
+    const uni = Buffer.from(JSON.stringify({ gemini: "kéy-ünï-✓" }), "utf8").toString("base64")
+      .replace(/\+/g, "-").replace(/\//g, "_");
+    assert(decodeKeyPayload("#keys=" + uni).gemini === "kéy-ünï-✓", "unicode was corrupted in transit");
+    return "valid payloads decode exactly, 7 malformed inputs rejected, unicode preserved";
   },
 );
 

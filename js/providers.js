@@ -46,6 +46,25 @@ export const setKey = (id, v) => { const s = (v || "").trim(); s ? LS.setItem(ke
 export const getModel = (id) => (LS.getItem(modelOf(id)) || "").trim();
 export const setModel = (id, v) => { const s = (v || "").trim(); s ? LS.setItem(modelOf(id), s) : LS.removeItem(modelOf(id)); };
 
+/* Decode a `#keys=<base64url>` setup fragment.
+ *
+ * Lives here rather than in app.js for two reasons: this module owns key
+ * storage, and it is DOM-free, so the regression suite can exercise the
+ * decoder offline. app.js owns the confirmation prompt and the write.
+ *
+ * Returns null on anything malformed — a setup link that half-applies would be
+ * worse than one that does nothing. */
+export function decodeKeyPayload(hash) {
+  const m = /(?:^|[#&])keys=([A-Za-z0-9_-]+=*)/.exec(hash || "");
+  if (!m) return null;
+  try {
+    const b64 = m[1].replace(/-/g, "+").replace(/_/g, "/");
+    const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+    const obj = JSON.parse(new TextDecoder().decode(bytes));
+    return obj && typeof obj === "object" && !Array.isArray(obj) ? obj : null;
+  } catch { return null; }
+}
+
 /* ───────────────────────────── the registry ───────────────────────────── */
 
 /* `model` is a DEFAULT, not a pin. Every row's model is editable in Settings,

@@ -35,6 +35,48 @@ const state = { runId: null, input: "", output: "", lang: "en", busy: null };
 /* Set during boot by the optional keys.local.js import; read by renderSettings. */
 let localKeyFile = { found: false, applied: [] };
 
+/* ───────────────────── one-click key setup via #fragment ─────────────────────
+ *
+ * keys.local.js only works where that file exists, which is never the hosted
+ * copy — and it must never exist there, because the repo is public. So the
+ * hosted origin needs some other way to receive keys once, without typing.
+ *
+ * A URL fragment is the right carrier for exactly one reason: browsers do NOT
+ * send it to the server. It never reaches GitHub, never lands in an access
+ * log, and never appears in a referrer header. It lives only in the link you
+ * hold — which makes that link exactly as secret as the keys inside it, so it
+ * must be treated as a credential and never pasted anywhere public.
+ *
+ * It ALWAYS asks before writing. A link that silently rewrote a visitor's
+ * stored keys would be an unpleasant thing to be able to send someone, and one
+ * confirmation click is cheap for something done once per browser.
+ *
+ * The fragment is stripped from the address bar immediately either way, so the
+ * keys do not linger in history or get copied out of the URL bar by accident.
+ */
+
+function applyKeysFromHash() {
+  const payload = P.decodeKeyPayload(location.hash);
+  if (!payload) return null;
+
+  const names = Object.keys(payload).filter((id) => P.BY_ID[id] && payload[id]);
+  if (!names.length) return null;
+
+  const ok = window.confirm(
+    "Load API keys into this browser for:\n\n  " +
+    names.map((id) => P.BY_ID[id].label).join("\n  ") +
+    "\n\nThey are saved in this browser only (" + location.origin + ") and sent only to those " +
+    "providers. Nothing is uploaded anywhere.\n\nProceed?");
+
+  // Strip the fragment either way, so the keys leave the address bar at once.
+  history.replaceState(null, "", location.pathname + location.search);
+  if (!ok) return null;
+
+  for (const id of names) P.setKey(id, payload[id]);
+  for (const [id, model] of Object.entries(payload._models || {})) P.setModel(id, model);
+  return names;
+}
+
 /* ─────────────────────────── language pickers ─────────────────────────── */
 
 function langOptions(select, { includeEnglish = true, selected } = {}) {
@@ -117,7 +159,11 @@ function renderSettings() {
    * the first it applies nothing -- and "loaded 0 providers" reads like a
    * failure when in fact everything is set. */
   const ready = P.REGISTRY.filter((p) => p.needsKey && P.hasKey(p.id));
-  if (localKeyFile.found) {
+  if (localKeyFile.viaLink) {
+    where.textContent = ready.length + " provider(s) loaded from a setup link and saved to this " +
+      "browser (" + location.origin + "): " + ready.map((p) => p.label).join(", ") +
+      ". These persist across reboots — you only do this once per browser.";
+  } else if (localKeyFile.found) {
     where.textContent = "keys.local.js found on this machine. " + ready.length +
       " provider(s) configured: " + ready.map((p) => p.label).join(", ") +
       (localKeyFile.applied.length ? " (" + localKeyFile.applied.length + " applied just now)" : "") +
@@ -633,6 +679,10 @@ try {
 } catch {
   /* No local key file. Expected on any hosted copy. */
 }
+
+/* After the file import, so an explicit setup link always wins over it. */
+const fromLink = applyKeysFromHash();
+if (fromLink) localKeyFile = { found: true, applied: fromLink, viaLink: true };
 
 langOptions($("from"), { selected: "en" });
 langOptions($("to"), { selected: "hi" });
