@@ -55,26 +55,43 @@ let localKeyFile = { found: false, applied: [] };
  * keys do not linger in history or get copied out of the URL bar by accident.
  */
 
-function applyKeysFromHash() {
+/* MUST NOT BLOCK BOOT. This originally called window.confirm(), which halts
+ * module execution — so the app froze behind the modal before it had built a
+ * single dropdown, and a browser that SUPPRESSES the dialog (common for
+ * programmatic dialogs during load, or once someone ticks "prevent this page
+ * from creating additional dialogs") left the page permanently dead with two
+ * empty selects and no error. Caught by testing the real deployed link.
+ *
+ * So the prompt is now an in-page <dialog> and boot never waits on it. */
+function offerKeysFromHash() {
   const payload = P.decodeKeyPayload(location.hash);
-  if (!payload) return null;
+  if (!payload) return;
 
   const names = Object.keys(payload).filter((id) => P.BY_ID[id] && payload[id]);
-  if (!names.length) return null;
 
-  const ok = window.confirm(
-    "Load API keys into this browser for:\n\n  " +
-    names.map((id) => P.BY_ID[id].label).join("\n  ") +
-    "\n\nThey are saved in this browser only (" + location.origin + ") and sent only to those " +
-    "providers. Nothing is uploaded anywhere.\n\nProceed?");
-
-  // Strip the fragment either way, so the keys leave the address bar at once.
+  // Strip the fragment immediately, before anything else, so the keys leave
+  // the address bar and the history entry whatever the answer turns out to be.
   history.replaceState(null, "", location.pathname + location.search);
-  if (!ok) return null;
+  if (!names.length) return;
 
-  for (const id of names) P.setKey(id, payload[id]);
-  for (const [id, model] of Object.entries(payload._models || {})) P.setModel(id, model);
-  return names;
+  $("keylink-what").textContent =
+    "A setup link was opened carrying keys for: " + names.map((id) => P.BY_ID[id].label).join(", ") +
+    ". Saving them here means you will not have to type them again on " + location.origin +
+    " — browser storage survives reboots.";
+
+  const finish = (save) => {
+    if (save) {
+      for (const id of names) P.setKey(id, payload[id]);
+      for (const [id, model] of Object.entries(payload._models || {})) P.setModel(id, model);
+      localKeyFile = { found: true, applied: names, viaLink: true };
+      fillProviders();
+    }
+    $("keylink").close();
+  };
+
+  $("keylink-yes").addEventListener("click", () => finish(true));
+  $("keylink-no").addEventListener("click", () => finish(false));
+  $("keylink").showModal();
 }
 
 /* ─────────────────────────── language pickers ─────────────────────────── */
@@ -680,9 +697,7 @@ try {
   /* No local key file. Expected on any hosted copy. */
 }
 
-/* After the file import, so an explicit setup link always wins over it. */
-const fromLink = applyKeysFromHash();
-if (fromLink) localKeyFile = { found: true, applied: fromLink, viaLink: true };
+
 
 langOptions($("from"), { selected: "en" });
 langOptions($("to"), { selected: "hi" });
@@ -694,6 +709,10 @@ pairNote();
 fillProviders();
 renderLog();
 loadDetectorConfig();
+
+/* LAST, deliberately. The page is fully built and usable before this offers
+ * anything, so a dismissed or suppressed dialog can never leave a dead page. */
+offerKeysFromHash();
 
 const dl = $("known-detectors");
 for (const d of D.KNOWN_DETECTORS) {

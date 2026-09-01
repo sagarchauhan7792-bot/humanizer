@@ -405,6 +405,19 @@
 </footer>
 
 <!-- ───────────────────────────── SETTINGS ───────────────────────────── -->
+<dialog id="keylink">
+  <h2>Set up API keys in this browser?</h2>
+  <p class="note" id="keylink-what"></p>
+  <div class="warnbox">
+    Keys are saved in this browser only and sent only to those providers. Nothing is uploaded
+    anywhere, and the link has already been removed from your address bar.
+  </div>
+  <div class="row" style="margin-top:1rem">
+    <button class="go" id="keylink-yes">Save these keys</button>
+    <button class="ghost" id="keylink-no">No thanks</button>
+  </div>
+</dialog>
+
 <dialog id="settings">
   <h2>Providers and keys</h2>
   <p class="note">
@@ -422,6 +435,6 @@
 </main>
 <!-- Bump ?v= on every release. ES modules are cached by URL, so without it a
      browser keeps running the previous version of the module after an update. -->
-<script type="module" src="js/app.js?v=4"></script>
+<script type="module" src="js/app.js?v=5"></script>
 </body>
 </html>
