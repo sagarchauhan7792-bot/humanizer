@@ -13,7 +13,7 @@ with the tool, none is defaulted, and the offline pass and all scoring work with
 start.bat
 ```
 
-Then open <http://127.0.0.1:8778>. (ES modules will not load over `file://`, so it needs the
+Then open <http://localhost:8778>. (ES modules will not load over `file://`, so it needs the
 server.) It also deploys as-is to GitHub Pages — `.nojekyll` is already there.
 
 ```bash

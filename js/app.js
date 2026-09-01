@@ -32,6 +32,9 @@ const THIN_COVERAGE = new Set(["sat", "brx", "mni", "doi", "ks", "kok", "mai", "
 
 const state = { runId: null, input: "", output: "", lang: "en", busy: null };
 
+/* Set during boot by the optional keys.local.js import; read by renderSettings. */
+let localKeyFile = { found: false, applied: [] };
+
 /* ─────────────────────────── language pickers ─────────────────────────── */
 
 function langOptions(select, { includeEnglish = true, selected } = {}) {
@@ -103,6 +106,29 @@ $("provider").addEventListener("change", () => {
 function renderSettings() {
   const list = $("prov-list");
   list.innerHTML = "";
+
+  /* Keys are stored PER ORIGIN. This line exists because that fact is
+   * invisible otherwise: the same tool served from localhost and from the
+   * hosted URL keeps two entirely separate sets of keys, and an empty dialog
+   * on one of them looks like a bug rather than the browser working normally. */
+  const where = el("div", "warnbox");
+  /* Report what is CONFIGURED, not what this boot happened to write. The file
+   * defaults to not overwriting a key already in storage, so on every run after
+   * the first it applies nothing -- and "loaded 0 providers" reads like a
+   * failure when in fact everything is set. */
+  const ready = P.REGISTRY.filter((p) => p.needsKey && P.hasKey(p.id));
+  if (localKeyFile.found) {
+    where.textContent = "keys.local.js found on this machine. " + ready.length +
+      " provider(s) configured: " + ready.map((p) => p.label).join(", ") +
+      (localKeyFile.applied.length ? " (" + localKeyFile.applied.length + " applied just now)" : "") +
+      ". Origin: " + location.origin + ".";
+  } else {
+    where.textContent = "No keys.local.js here — expected on the hosted copy, and deliberate: " +
+      "the repo is public and shipping keys to it would publish them. Enter a key once below and " +
+      "this browser will remember it across reboots. Note that storage is PER ORIGIN, so " +
+      location.origin + " keeps its own set, separate from any local copy you run.";
+  }
+  list.appendChild(where);
   for (const p of P.REGISTRY) {
     if (p.kind === "none") continue;
     const box = el("div", "prov");
@@ -603,10 +629,7 @@ $("d-save").addEventListener("click", () => {
  * is served from, so localhost and the Pages URL keep separate keys. */
 try {
   const local = await import("../keys.local.js");
-  const applied = local.applyLocalKeys();
-  if (applied.length) {
-    console.info("[humanizer] loaded " + applied.length + " key(s) from keys.local.js: " + applied.join(", "));
-  }
+  localKeyFile = { found: true, applied: local.applyLocalKeys() };
 } catch {
   /* No local key file. Expected on any hosted copy. */
 }
