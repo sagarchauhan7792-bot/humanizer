@@ -74,7 +74,10 @@ export const REGISTRY = [
   },
   {
     id: "groq", label: "Groq (fast, free tier)", kind: "openai", needsKey: true,
-    base: "https://api.groq.com/openai/v1", models: ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"],
+    // Verified against a live key 2026-08-31. Groq's lineup churns hard and the
+    // old llama-3.3 slugs now 404; these are what /models actually returns.
+    base: "https://api.groq.com/openai/v1",
+    models: ["openai/gpt-oss-120b", "qwen/qwen3.8-27b", "openai/gpt-oss-20b", "groq/compound"],
   },
   {
     id: "openrouter", label: "OpenRouter (many models)", kind: "openai", needsKey: true,

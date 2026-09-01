@@ -592,6 +592,25 @@ $("d-save").addEventListener("click", () => {
 
 /* ─────────────────────────── boot ─────────────────────────── */
 
+/* Optional local credentials. `keys.local.js` sits next to index.html, is
+ * gitignored, and exists only on a machine where someone put it there — so
+ * this import failing is the NORMAL case on the hosted copy, and the 404 in
+ * the console is expected rather than a fault.
+ *
+ * It seeds localStorage, which is where keys live either way. Nothing about
+ * the storage model changes; this just saves retyping on a fresh profile.
+ * Note that browser storage is per-origin: the file only affects the origin it
+ * is served from, so localhost and the Pages URL keep separate keys. */
+try {
+  const local = await import("../keys.local.js");
+  const applied = local.applyLocalKeys();
+  if (applied.length) {
+    console.info("[humanizer] loaded " + applied.length + " key(s) from keys.local.js: " + applied.join(", "));
+  }
+} catch {
+  /* No local key file. Expected on any hosted copy. */
+}
+
 langOptions($("from"), { selected: "en" });
 langOptions($("to"), { selected: "hi" });
 langOptions($("score-lang"), { selected: "hi" });

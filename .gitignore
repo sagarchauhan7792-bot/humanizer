@@ -2,3 +2,9 @@ _test/
 node_modules/
 *.log
 .DS_Store
+
+# Local credentials. NEVER commit. This repo is public.
+keys.local.js
+*.local.js
+.env
+*.key
