@@ -3,6 +3,12 @@
 Translate between any pair of 23 languages, then rewrite the output until it stops reading as
 machine-produced. Static page, no backend, no build step, no dependencies.
 
+**Live:** <https://sagarchauhan7792-bot.github.io/humanizer/>
+**Regression suite:** <https://sagarchauhan7792-bot.github.io/humanizer/test.html>
+
+Bring your own API key — it is stored in your browser's localStorage and nowhere else. No key ships
+with the tool, none is defaulted, and the offline pass and all scoring work with no key at all.
+
 ```bash
 start.bat
 ```
